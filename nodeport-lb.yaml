@@ -1,0 +1,31 @@
+---
+# deploys a HAProxy LB that runs on node0 in the host network and proxies TCP connections to NodePorts on all nodes
+kind: Deployment 
+apiVersion: extensions/v1beta1
+metadata:
+  name: nodeport-lb
+  #namespace: default
+  labels:
+    foo: bar
+spec:
+  # Can only have a single active instance.
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      name: nodeport-lb
+      labels:
+        foo: bar
+    spec:
+      # run this pod on node0 in the host network
+      hostNetwork: true
+      nodeSelector:
+        kubernetes.io/hostname: node0
+      containers:
+        - name: nodeport-lb
+          image: haproxy:1.7.1
+          command:
+            - /bin/sleep
+          args:
+            - "36000"
