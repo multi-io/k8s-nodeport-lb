@@ -13,9 +13,9 @@ target_node_name_pattern = '^node'
 
 # TODO: also allow for name-based mapping (virtual hosting)
 
-port_mappings = {
-    80: 30000
-}
+port_mappings = [
+    dict(proxy_port=80, dest_port=30000)
+]
 
 interval = 30 # todo events/notifications?
 
@@ -62,8 +62,15 @@ def get_config_variables():
         port_mappings   = port_mappings
     )
 
+
+from jinja2 import Environment, FileSystemLoader
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
+env = Environment(loader=FileSystemLoader([script_dir]))
+proxy_conf_template = env.get_template('haproxy.cfg.template')
+
 def update_proxy(config_variables):
-    print(config_variables)
+    print(proxy_conf_template.render(config_variables))
 
 previous_config = None
 
