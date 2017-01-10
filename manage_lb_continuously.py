@@ -1,43 +1,48 @@
-#!/usr/bin/env python
-# creates a container on a specific node (proxy node) that runs a haproxy instance in the
-# host network that listens on some TCP port(s) on the proxy node and forwards (load-balances)
-# all connections to some ports on some target nodes.
-# Continuously tracks existing nodes and updates the haproxy container if anything changes.
-
-### config
-
-target_namespace = 'default'
-
-proxy_node_name = 'node0'
-target_node_name_pattern = '^node'
-
-# TODO: also allow for name-based mapping (virtual hosting)
-
-port_mappings = [
-    dict(proxy_port=80, dest_port=30000)
-]
-
-interval = 30 # todo events/notifications?
-
-###
+#!/usr/bin/env python3
+# runs a haproxy instance that listens on some TCP port(s) and forwards (load-balances) all connections
+# to some ports on some target nodes.
+# Continuously tracks existing nodes and restarts the proxy if anything changes.
+# Must be run in the host network.
 
 import pykube
 import re
 import os
 import sys
 import time
+import argparse
 
-#api = pykube.HTTPClient(pykube.KubeConfig.from_service_account())
-api = pykube.HTTPClient(pykube.KubeConfig.from_file(os.path.dirname(os.path.realpath(__file__)) + "/../admin.conf"))
+parser = argparse.ArgumentParser()
+
+parser.add_argument('-d', '--debug', action='store_true', help='debug mode')
+parser.add_argument('-i', '--interval', type=int, default=30, help='interval between updates, in seconds')
+
+# TODO: allow for label matching
+parser.add_argument('-t', '--target', default='.*', help='target nodes name pattern')
+
+# TODO: also allow for name-based mapping (virtual hosting)
+parser.add_argument('-p', '--port-mapping',
+                    dest='port_mappings',
+                    action='append',
+                    required=True,
+                    help='specify a port mapping (<proxy port>:<target port>)')
+
+args = parser.parse_args()
+
+port_mappings = []
+pm_pat = re.compile('([0-9]+):([0-9]+)')
+for pm in args.port_mappings:
+    m = pm_pat.match(pm)
+    assert m, "Illegal port mapping: {0}".format(pm)
+    port_mappings.append(dict(proxy_port=int(m.group(1)), dest_port=int(m.group(2))))
+
+if args.debug:
+    api = pykube.HTTPClient(pykube.KubeConfig.from_file(os.path.dirname(os.path.realpath(__file__)) + "/../admin.conf"))
+else:
+    api = pykube.HTTPClient(pykube.KubeConfig.from_service_account())
 
 nodes_query = pykube.Node.objects(api)
 
-try:
-    nodes_query.get_by_name(proxy_node_name)
-except pykube.ObjectDoesNotExist:
-    sys.stderr.write("warning: proxy node {0} currently not found\n".format(proxy_node_name))
-
-target_node_name_pattern = re.compile(target_node_name_pattern)
+target_node_name_pattern = re.compile(args.target)
 
 def get_config_variables():
 
@@ -57,7 +62,6 @@ def get_config_variables():
     target_nodes = filter(bool, [get_node_data(n) for n in target_nodes])
 
     return dict(
-        proxy_node_name = proxy_node_name,
         target_nodes    = list(target_nodes),
         port_mappings   = port_mappings
     )
@@ -75,9 +79,12 @@ def update_proxy(config_variables):
 previous_config = None
 
 while True:
-    config = get_config_variables()
-    if config != previous_config:
-        previous_config = config
-        update_proxy(config)
+    try:
+        config = get_config_variables()
+        if config != previous_config:
+            previous_config = config
+            update_proxy(config)
+    except:
+        sys.stderr.write("Unexpected error: {0}\n".format(sys.exc_info()[0]))
 
-    time.sleep(interval)
+    time.sleep(args.interval)
