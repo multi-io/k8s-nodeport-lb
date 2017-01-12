@@ -1,0 +1,27 @@
+# deploys a HAProxy LB that runs on node0 in the host network and proxies port 80 connections to NodePorts on all node* nodes
+kind: Deployment 
+apiVersion: extensions/v1beta1
+metadata:
+  name: nodeport-lb
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      name: nodeport-lb
+      labels:
+        foo: bar
+    spec:
+      # run this pod on node0 in the host network
+      hostNetwork: true
+      nodeSelector:
+        kubernetes.io/hostname: node0
+      containers:
+        - name: nodeport-lb
+          image: oklischat/k8s-nodeport-lb
+          args:
+            - "-t"
+            - "^node"
+            - "-p"
+            - "80:30000"
